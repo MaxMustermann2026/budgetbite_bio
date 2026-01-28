@@ -1,16 +1,22 @@
-# budgetbite_bio
+# BudgetBite Bio
 
-A new Flutter project.
+Budget-aware bio meal planning app built with Flutter & Supabase.
 
-## Getting Started
+## MVP Features
+- Weekly meal planning (recipes + servings scaling)
+- Shopping list with prices (BIO / KONV)
+- Budget overview & bio share (%)
+- Pantry (local) with leftovers
+- Week close flow (consume pantry + add leftovers)
+- Sorting (expensive first / A–Z / bio first)
+- Copy shopping list to clipboard
 
-This project is a starting point for a Flutter application.
+## Tech Stack
+- Flutter (Dart)
+- Supabase (Postgres)
+- SharedPreferences (local pantry & UI state)
 
-A few resources to get you started if this is your first Flutter project:
-
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Run locally
+```bash
+flutter pub get
+flutter run
