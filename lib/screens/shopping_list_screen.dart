@@ -118,27 +118,17 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
     return purchaseBioOverride[key] ?? line.isBio;
   }
 
-  int _selectedPricePerPackCents(ShoppingLine line) {
-    final bio = _selectedBio(line);
-    return line.pricePerPackCents(bio);
-  }
-
-  int _selectedTotalCostCents(ShoppingLine line) {
-    final bio = _selectedBio(line);
-    return line.totalPriceCents(bio);
-  }
-
   (int totalCostCents, int bioCostCents) _computeTotals(List<ShoppingLine> lines) {
     int total = 0;
     int bio = 0;
 
     for (final l in lines) {
-      final isBio = _selectedBio(l);
+      final key = _lineKey(l);
+      final isBio = purchaseBioOverride[key] ?? l.isBio;
 
       final cost = l.totalPriceCents(isBio);
       total += cost;
 
-      // Bio nur zählen, wenn es wirklich Bio ist und möglich (sonst wäre es KONV)
       if (isBio && l.canUseBio) {
         bio += cost;
       }
@@ -152,6 +142,12 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
     final done = <ShoppingLine>[];
 
     for (final l in lines) {
+      // ✅ A2c: Pantry-only Items im Einkaufsmodus ausblenden
+      // (packages == 0 bedeutet: vollständig durch Pantry gedeckt)
+      if (shoppingMode && l.packages == 0) {
+        continue;
+      }
+
       if (shoppingMode && checked.contains(_lineKey(l))) {
         done.add(l);
       } else {
@@ -160,6 +156,11 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
     }
 
     int byMode(ShoppingLine a, ShoppingLine b) {
+      int totalCents(ShoppingLine x) {
+        final isBio = _selectedBio(x);
+        return x.totalPriceCents(isBio);
+      }
+
       switch (sortMode) {
         case SortMode.alphabetic:
           return a.name.toLowerCase().compareTo(b.name.toLowerCase());
@@ -168,11 +169,11 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
           final ab = _selectedBio(a) && a.canUseBio;
           final bb = _selectedBio(b) && b.canUseBio;
           if (ab != bb) return ab ? -1 : 1;
-          return _selectedTotalCostCents(b).compareTo(_selectedTotalCostCents(a));
+          return totalCents(b).compareTo(totalCents(a));
 
         case SortMode.expensiveFirst:
         default:
-          return _selectedTotalCostCents(b).compareTo(_selectedTotalCostCents(a));
+          return totalCents(b).compareTo(totalCents(a));
       }
     }
 
@@ -216,18 +217,17 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
     buffer.writeln('');
 
     for (final line in lines) {
-      final isBio = _selectedBio(line) && line.canUseBio;
+      final key = _lineKey(line);
+      final isBio = (purchaseBioOverride[key] ?? line.isBio) && line.canUseBio;
       final badge = isBio ? 'BIO' : 'KONV';
 
-      final doneMark = (shoppingMode && checked.contains(_lineKey(line))) ? '☑ ' : '☐ ';
+      final doneMark = (shoppingMode && checked.contains(key)) ? '☑ ' : '☐ ';
 
       final price = line.totalEuro(isBio);
-      final packSize = '${line.packages}× ${line.unitQuantity.toStringAsFixed(0)} ${line.unit}';
-      final purchased = '${line.purchasedAmount.toStringAsFixed(0)} ${line.unit}';
 
-      buffer.writeln('$doneMark${line.name} [$badge] — $packSize (= $purchased) — $price');
+      buffer.writeln('$doneMark${line.name} [$badge] — ${line.purchaseText()} — $price');
 
-      if ((_selectedBio(line) == true) && !line.canUseBio) {
+      if ((purchaseBioOverride[key] == true) && !line.canUseBio) {
         buffer.writeln('   Hinweis: Bio nicht verfügbar → Konv.');
       }
     }
@@ -275,7 +275,6 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
     );
   }
 
-  // Option A: klarer Modus-Banner
   Widget _modeBanner() {
     final isShop = shoppingMode;
 
@@ -321,7 +320,6 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
     final selectedBio = _selectedBio(line) && line.canUseBio;
     final canBio = line.canUseBio;
 
-    // Optional (UX): Im Einkaufsmodus nicht mehr umschalten
     final canEdit = !shoppingMode;
 
     return Row(
@@ -350,6 +348,59 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
             child: Text('Fix', style: TextStyle(fontSize: 12, color: Colors.black54)),
           ),
       ],
+    );
+  }
+
+  Future<void> _applyBoughtToPantry(ShoppingListService service, ShoppingListResult result) async {
+    if (checked.isEmpty) return;
+
+    await service.applyToPantry(
+      result: result,
+      includeLine: (line) => checked.contains(_lineKey(line)),
+      consumePantryUsed: false, // im Laden: wir buchen erstmal nur "Reste aus gekauften"
+      addLeftovers: true,
+    );
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Gekauftes in Pantry übernommen (Reste)')),
+    );
+  }
+
+  Future<void> _closeWeek(ShoppingListService service, ShoppingListResult result) async {
+    final ok = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Woche abschließen?'),
+            content: const Text(
+              'Dabei wird Pantry-Verbrauch gebucht und Restmengen aus den gekauften Packungen in die Pantry übernommen.',
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Abbrechen')),
+              ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Abschließen')),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!ok) return;
+
+    await service.applyToPantry(
+      result: result,
+      includeLine: (_) => true,
+      consumePantryUsed: true,
+      addLeftovers: true,
+    );
+
+    // optional: UI-Status zurücksetzen
+    setState(() {
+      checked.clear();
+    });
+    await _savePrefs();
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Woche abgeschlossen – Pantry aktualisiert')),
     );
   }
 
@@ -416,6 +467,7 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
             future: service.buildFromWeekPlan(
               weekPlan: widget.weekPlan,
               people: widget.people,
+              usePantry: true, // ✅ Pantry-Abzug aktiv
             ),
             builder: (context, snap) {
               if (snap.connectionState != ConnectionState.done) {
@@ -440,7 +492,7 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
               final bioSharePercent =
                   totalCostCents == 0 ? 0 : ((bioCostCents / totalCostCents) * 100).round();
 
-              final totalItems = result.lines.length;
+              final totalItems = linesSorted.length;
               final doneItems = checked.length.clamp(0, totalItems);
 
               return Padding(
@@ -527,14 +579,14 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
                           final infoLines = <String>[
                             line.neededText(),
                             line.purchaseText(),
-                            if (_selectedBio(line) == true && !line.canUseBio) 'Bio nicht verfügbar → Konv.',
+                            if ((_selectedBio(line) == true) && !line.canUseBio)
+                              'Bio nicht verfügbar → Konv.',
                           ];
 
                           final titleStyle = TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
-                            decoration:
-                                shoppingMode && isChecked ? TextDecoration.lineThrough : null,
+                            decoration: shoppingMode && isChecked ? TextDecoration.lineThrough : null,
                             color: shoppingMode && isChecked ? Colors.black45 : Colors.black87,
                           );
 
@@ -647,6 +699,35 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
                             ),
                           );
                         },
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+
+                    // ✅ Pantry Buttons
+                    SafeArea(
+                      top: false,
+                      child: Row(
+                        children: [
+                          if (shoppingMode) ...[
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                icon: const Icon(Icons.kitchen_outlined),
+                                label: Text('Gekauftes → Pantry (${checked.length})'),
+                                onPressed: checked.isEmpty
+                                    ? null
+                                    : () => _applyBoughtToPantry(service, result),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                          ],
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              icon: const Icon(Icons.done_all),
+                              label: const Text('Woche abschließen'),
+                              onPressed: () => _closeWeek(service, result),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
