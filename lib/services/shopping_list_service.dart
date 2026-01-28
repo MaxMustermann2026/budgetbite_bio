@@ -171,7 +171,6 @@ class ShoppingLine {
   }
 
   String _fmtQty(double v) {
-    // g/ml oft ohne Nachkommastellen, pcs ggf .0 weg
     if ((v - v.roundToDouble()).abs() < 0.0001) return v.toStringAsFixed(0);
     return v.toStringAsFixed(1);
   }
@@ -249,30 +248,34 @@ class ShoppingListService {
       for (final row in ingredientsList) row['id'].toString(): row,
     };
 
-    // 4) Preise laden (ingredient_prices)
+    // 4) Preise laden (ingredient_prices) – robust:
+    //    - IGNORE rows where ingredient_id is NULL
+    //    - choose best per ingredient_id: store NULL first, then newest created_at
     final pricesRes = await _sb
         .from('ingredient_prices')
         .select('ingredient_id,country,store,price_conv_cents,price_bio_cents,unit_quantity,unit,created_at')
         .eq('country', countryCode)
         .inFilter('ingredient_id', ingredientIds);
 
-    final pricesList = (pricesRes as List).cast<Map<String, dynamic>>();
+    final pricesList = (pricesRes as List).cast<Map<String, dynamic>>()
+        .where((r) => (r['ingredient_id']?.toString() ?? '').isNotEmpty)
+        .toList();
 
-    // Best price row pro ingredient_id auswählen:
-    // Regel: erst "store IS NULL" bevorzugen, sonst neueste created_at.
     final Map<String, Map<String, dynamic>> bestPriceByIngredientId = {};
     for (final id in ingredientIds) {
       final rows = pricesList.where((r) => r['ingredient_id']?.toString() == id).toList();
       if (rows.isEmpty) continue;
 
       rows.sort((a, b) {
+        // 1) store NULL bevorzugen
         final aStoreNull = a['store'] == null;
         final bStoreNull = b['store'] == null;
         if (aStoreNull != bStoreNull) return aStoreNull ? -1 : 1;
 
+        // 2) neuestes created_at (desc)
         final aCreated = a['created_at']?.toString() ?? '';
         final bCreated = b['created_at']?.toString() ?? '';
-        return bCreated.compareTo(aCreated); // desc
+        return bCreated.compareTo(aCreated);
       });
 
       bestPriceByIngredientId[id] = rows.first;
@@ -287,9 +290,10 @@ class ShoppingListService {
 
       final name = (ingRow?['name'] ?? 'Zutat').toString();
 
-      // Einheit + Packungsgröße: bevorzugt aus ingredient_prices, fallback ingredient-stammdaten
       final priceRow = bestPriceByIngredientId[ingId];
 
+      // Einheit + Packungsgröße:
+      // bevorzugt aus ingredient_prices, fallback ingredient-stammdaten
       final unit = (priceRow?['unit'] ?? ingRow?['unit'] ?? '').toString();
       final unitQtyRaw = priceRow?['unit_quantity'] ?? ingRow?['unit_quantity'] ?? 1;
       final unitQuantity = (unitQtyRaw is num) ? unitQtyRaw.toDouble() : 1.0;
