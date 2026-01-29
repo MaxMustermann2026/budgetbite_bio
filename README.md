@@ -1,20 +1,28 @@
 # BudgetBite Bio
 
-Budget-aware bio meal planning app built with Flutter & Supabase.
+**Mehr Bio essen, ohne das Budget zu sprengen – mit smarter Einkaufsplanung und Vorratsnutzung.**
+
+BudgetBite Bio hilft dir, Wochenpläne zu erstellen, Einkäufe intelligent zu planen und vorhandene Vorräte zu berücksichtigen – damit Bio alltagstauglich und bezahlbar bleibt.
+
+---
 
 ## MVP Features
 - Weekly meal planning (recipes + servings scaling)
 - Shopping list with prices (BIO / KONV)
 - Budget overview & bio share (%)
-- Pantry (local) with leftovers
-- Week close flow (consume pantry + add leftovers)
+- Vorrat (lokal): vorhandene Lebensmittel werden automatisch abgezogen
+- Week close flow: Vorrat verbrauchen + Reste speichern
 - Sorting (expensive first / A–Z / bio first)
 - Copy shopping list to clipboard
+
+---
 
 ## Tech Stack
 - Flutter (Dart)
 - Supabase (Postgres)
-- SharedPreferences (local pantry & UI state)
+- SharedPreferences (local state: Vorrat & UI)
+
+---
 
 ## Supabase setup (MVP)
 
@@ -46,7 +54,7 @@ This MVP uses these tables in schema `public`:
 
 **ingredient_prices**
 - `id uuid` (PK)
-- `ingredient_id uuid` (FK -> ingredients.id)
+- `ingredient_id uuid` (FK → ingredients.id)
 - `country text` (e.g. `DE`)
 - `store text` (nullable)
 - `price_conv_cents int4`
@@ -60,7 +68,8 @@ This MVP uses these tables in schema `public`:
 - `title text`
 - `servings int4`
 - `instructions text`
-- `ingredients jsonb` (contains `ingredient_id`, `amount`, `use_bio`)
+- `ingredients jsonb`
+  - contains: `ingredient_id`, `amount`, `use_bio`
 - `diet text`
 - `meal_type text`
 - `prep_level text`
@@ -76,18 +85,24 @@ This MVP uses these tables in schema `public`:
 Optional:
 - `ingredient_prices_view` (view for convenience)
 
+---
+
 ### 4) RLS (MVP note)
-For MVP/dev you can keep RLS disabled.  
-For production: enable RLS and add proper policies (read/write only for authenticated users).
+For MVP / dev you can keep RLS disabled.  
+For production: enable RLS and add user-based policies.
+
+---
 
 ## Roadmap (next)
-- Enable Auth (email/password) + user profiles
-- Enable RLS + policies per user
-- Multi-country pricing (country selector instead of fixed `DE`)
-- Store-specific prices (choose preferred store)
-- Pantry moved from local (SharedPreferences) to Supabase per user
-- Better recipe ingredient structure (typed table instead of jsonb)
-- Release builds (Android/iOS) + basic CI
+- Auth (Magic Link) + user profiles
+- Enable RLS + per-user data isolation
+- Multi-country pricing
+- Store-specific prices
+- Vorrat synced per user (Supabase instead of local)
+- Typed recipe ingredients (instead of jsonb)
+- App Store / Play Store releases + basic CI
+
+---
 
 ## Run locally
 ```bash
